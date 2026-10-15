@@ -58,6 +58,13 @@ def valid_date(value: str) -> str:
 def valid_month(value: str) -> str:
     if not isinstance(value, str) or not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", value):
         raise ValueError("month must be YYYY-MM")
+
+    year, month = map(int, value.split("-"))
+    # The analytics pipelines need a representable start and exclusive end date.
+    # Year 0000 is invalid, and 9999-12 cannot form the next-month boundary.
+    if year == 0 or (year == 9999 and month == 12):
+        raise ValueError("month is outside the supported calendar range")
+
     return value
 
 
@@ -524,7 +531,7 @@ def employee_monthly_pipeline(emp_code: str, month: str):
 
 @app.get("/analytics/employees/{emp_code}/monthly")
 def employee_monthly(emp_code: str, month: str = Query(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$")):
-    valid_month(month)
+    request_month(month)
     if not employees.find_one({"emp_code": emp_code}, {"_id": 1}):
         raise HTTPException(404, "employee not found")
     rows = list(employees.aggregate(employee_monthly_pipeline(emp_code, month)))
@@ -568,7 +575,7 @@ def department_summary_pipeline(month: str, department: Optional[str] = None):
 
 @app.get("/analytics/departments/summary")
 def department_summary(month: str = Query(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$"), department: Optional[str] = None):
-    valid_month(month)
+    request_month(month)
     items = list(employees.aggregate(department_summary_pipeline(month, department)))
     return {"month": month, "items": items}
 
@@ -595,7 +602,7 @@ def leaderboard_pipeline(month: str, limit: int, department: Optional[str] = Non
 
 @app.get("/analytics/leaderboard/late")
 def late_leaderboard(month: str = Query(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$"), limit: int = Query(10, ge=1, le=50), department: Optional[str] = None):
-    valid_month(month)
+    request_month(month)
     return {"month": month, "items": list(attendance.aggregate(leaderboard_pipeline(month, limit, department)))}
 
 
